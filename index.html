@@ -1,0 +1,275 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Robot arm demo</title>
+    <style>
+        body { margin: 0; }
+        canvas { display: block; }
+        .robot-info-container {
+            position: absolute;
+            left: 100px;
+            padding: 10px;
+            background-color: rgba(255, 255, 255, 0.7);
+        }
+    </style>
+</head>
+<body>
+    <div class="robot-info-container">
+        <div class="robot-info"></div>
+    </div>
+    <script type="importmap">
+    {
+        "imports": {
+        "three": "https://unpkg.com/three@v0.160.0/build/three.module.js",
+        "three/addons/": "https://unpkg.com/three@v0.160.0/examples/jsm/"
+        }
+    }
+    </script>
+
+    <script src="https://unpkg.com/three@v0.160.0/examples/jsm/libs/ammo.wasm.js"></script>
+
+    <script type="module">
+
+        import * as THREE from 'three';
+        import { AmmoPhysics } from 'three/addons/physics/AmmoPhysics.js';
+
+		import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+        import Stats from 'three/addons/libs/stats.module.js';
+
+        let scene, camera, renderer, light;
+        let robot, spheres;
+        let clock;
+        let stats;
+        let physics;
+
+		const keyStates = {};
+        const B1_MIN = -Math.PI / 2;
+        const B1_MAX = Math.PI / 2;
+        const B2_MIN = -Math.PI * 3 / 4;
+        const B2_MAX = Math.PI * 3 / 4;
+        const B3_MIN = -Math.PI * 3 / 4;
+        const B3_MAX = Math.PI * 3 / 4;
+
+        document.addEventListener('keydown', (event) => {
+            keyStates[ event.code ] = true;
+        });
+        document.addEventListener('keyup', (event) => {
+            keyStates[ event.code ] = false;
+        });
+
+        init().then(animate);
+
+        async function init() {
+            physics = await AmmoPhysics();
+
+            stats = new Stats();
+			document.body.appendChild( stats.dom );
+
+            const container = document.createElement( 'div' );
+            document.body.appendChild( container );
+            scene = new THREE.Scene();
+			scene.background = new THREE.Color( 0xf6eedc );
+            camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+            camera.position.set( 10, 11, 2.7 );
+            
+            scene.add( new THREE.AmbientLight( 0xffffff, 2 ) );
+
+            renderer = new THREE.WebGLRenderer({ antialias: true });
+            
+            renderer.setSize(window.innerWidth, window.innerHeight);
+           	renderer.shadowMap.enabled = true;
+
+            clock = new THREE.Clock();
+
+ 
+            window.addEventListener( 'resize', onWindowResize );
+
+
+            const floorGeometry = new THREE.BoxGeometry( 20, 20, 1 )
+            const floorMaterial = new THREE.MeshBasicMaterial( {color: 0x999999, side: THREE.DoubleSide} );
+            const floor = new THREE.Mesh( floorGeometry, floorMaterial );
+            floor.rotation.x = Math.PI / 2;
+            floor.userData.physics = { mass: 0 };
+            scene.add( floor );
+            
+            const wallPositions = [0, 0, 9, 9, 0, 0, 0, 0, -9, -9, 0, 0];
+            for( let i = 0; i < 4; i++) {
+                const wallGeometry = new THREE.BoxGeometry( 20, 4, 2 )
+                const wallMaterial = new THREE.MeshLambertMaterial( {color: 0x999999, side: THREE.DoubleSide} );
+                const wall = new THREE.Mesh( wallGeometry, wallMaterial );
+                wall.castShadow = true;
+                wall.receiveShadow = true;
+                wall.rotation.y = Math.PI * i / 2;
+                // wall.position.set(wallPositions[0]);
+                wall.position.set(wallPositions[i * 3], wallPositions[i * 3 + 1], wallPositions[i * 3 + 2]);
+                wall.userData.physics = { mass: 0 };
+                scene.add( wall );
+            }
+            
+            // const pondGeometry = new THREE.SphereGeometry( 12, 32, 32, 0, Math.PI * 2, 0, Math.PI / 2 ); 
+            // const pondMaterial = new THREE.MeshPhongMaterial( {color: 0x9999ee, side: THREE.DoubleSide, opacity: 0.5, transparent: true } );
+            // const pond = new THREE.Mesh( pondGeometry, pondMaterial );
+            // pond.rotation.x = Math.PI;
+            // // pond.userData.physics = { mass: 0 };
+
+            // scene.add( pond );
+
+
+            // spheres
+            const geometrySphere = new THREE.IcosahedronGeometry( 0.5, 4 );
+            const materialSphere = new THREE.MeshLambertMaterial();
+			const matrix = new THREE.Matrix4();
+			const color = new THREE.Color();
+
+            spheres = new THREE.InstancedMesh( geometrySphere, materialSphere, 200 );
+            spheres.instanceMatrix.setUsage( THREE.DynamicDrawUsage ); // will be updated every frame
+            spheres.castShadow = true;
+            spheres.receiveShadow = true;
+            spheres.userData.physics = { mass: 1 };
+            scene.add( spheres );
+
+            for ( let i = 0; i < spheres.count; i ++ ) {
+
+                matrix.setPosition( 10 * Math.random() - 5, Math.random() * 2 + 10, 10 * Math.random() - 5 );
+                spheres.setMatrixAt( i, matrix );
+                spheres.setColorAt( i, color.setHex( 0xffffff * Math.random() ) );
+
+            }
+
+            physics.addScene( scene );            
+
+            const loader = new GLTFLoader();
+            
+            const modelURL = './asset/model/arm.glb';
+            
+            container.appendChild( renderer.domElement );
+            
+            loader.load(modelURL, async function (gltf) {
+                robot = gltf.scene;
+         
+                robot.children[0].children[1].children[0].rotation.y = -.5;
+                robot.children[0].children[1].children[0].children[0].rotation.z = .5;
+                robot.children[0].children[1].children[0].children[0].children[0].rotation.z = -1.5;
+                robot.children[0].children[1].children[0].children[0].children[0].children[0].rotation.z = -.5;
+                await renderer.compileAsync( robot, camera, scene );
+                robot.userData.physics = { mass: 0 };
+                scene.add(robot);
+    
+                
+            });
+
+            const controls = new OrbitControls( camera, renderer.domElement );
+            controls.addEventListener( 'change', animate );
+            controls.target.set( 0, 2, 0 );
+            controls.update();
+        }
+
+
+        
+
+        function animate() {
+            const delta = clock.getDelta();
+            stats.update();
+            
+            if ( keyStates[ 'KeyA' ] ) {
+                robot.children[0].children[1].children[0].rotation.y += 2 * delta;
+            }
+
+            if ( keyStates[ 'KeyD' ] ) {
+                robot.children[0].children[1].children[0].rotation.y -= 2 * delta;
+            }
+
+            if ( keyStates[ 'KeyW' ] ) {
+                robot.children[0].children[1].children[0].children[0].rotation.z = clamp(
+                    robot.children[0].children[1].children[0].children[0].rotation.z - 1.0 * delta,
+                    B1_MIN,
+                    B1_MAX
+                );
+            }
+
+            if ( keyStates[ 'KeyS' ] ) {
+                robot.children[0].children[1].children[0].children[0].rotation.z = clamp(
+                    robot.children[0].children[1].children[0].children[0].rotation.z + 1.0 * delta,
+                    B1_MIN,
+                    B1_MAX
+                );
+            }
+
+            if ( keyStates[ 'KeyQ' ] ) {
+                robot.children[0].children[1].children[0].children[0].children[0].rotation.z = clamp(
+                    robot.children[0].children[1].children[0].children[0].children[0].rotation.z + 1.0 * delta,
+                    B2_MIN,
+                    B2_MAX
+                );
+            }
+
+            if ( keyStates[ 'KeyE' ] ) {
+                robot.children[0].children[1].children[0].children[0].children[0].rotation.z = clamp(
+                    robot.children[0].children[1].children[0].children[0].children[0].rotation.z - 1.0 * delta,
+                    B2_MIN,
+                    B2_MAX
+                );
+            }
+
+            if ( keyStates[ 'KeyC'] ) {
+                robot.children[0].children[1].children[0].children[0].children[0].children[0].rotation.z = clamp(
+                    robot.children[0].children[1].children[0].children[0].children[0].children[0].rotation.z - 1.0 * delta,
+                    B3_MIN,
+                    B3_MAX
+                );
+            }
+
+            if ( keyStates[ 'KeyZ'] ) {
+                robot.children[0].children[1].children[0].children[0].children[0].children[0].rotation.z = clamp(
+                    robot.children[0].children[1].children[0].children[0].children[0].children[0].rotation.z + 1.0 * delta,
+                    B3_MIN,
+                    B3_MAX
+                );
+            }
+
+            // robot info
+            const infoContainer = document.getElementsByClassName('robot-info')[0];
+
+            if(robot != undefined) {
+                const rot1 = ((robot.children[0].children[1].children[0].rotation.y / Math.PI * 180 + 360) % 360).toFixed(1);
+                const bend1 = (robot.children[0].children[1].children[0].children[0].rotation.z / Math.PI * 180).toFixed(1);
+                const bend2 = (robot.children[0].children[1].children[0].children[0].children[0].rotation.z / Math.PI * 180).toFixed(1);
+                const bend3 = (robot.children[0].children[1].children[0].children[0].children[0].children[0].rotation.z / Math.PI * 180).toFixed(1);
+                const windowSizeInfo = `
+                台座角度: ${rot1}°, 関節１角度: ${bend1}°, 関節２角度: ${bend2}°, 関節３角度: ${bend3}° 
+                `;
+                infoContainer.textContent = windowSizeInfo;
+
+            }
+
+            requestAnimationFrame(animate);
+
+            renderer.render(scene, camera);
+        }
+
+        
+
+        function onWindowResize() {
+
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+
+            renderer.setSize( window.innerWidth, window.innerHeight );
+
+            animate();
+
+		}
+
+        function clamp(x, min, max) {
+            return Math.min(max, Math.max(min, x));
+        }
+
+        
+
+    </script>
+
+</body>
+</html>
