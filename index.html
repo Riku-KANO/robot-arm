@@ -103,7 +103,6 @@
                 wall.castShadow = true;
                 wall.receiveShadow = true;
                 wall.rotation.y = Math.PI * i / 2;
-                // wall.position.set(wallPositions[0]);
                 wall.position.set(wallPositions[i * 3], wallPositions[i * 3 + 1], wallPositions[i * 3 + 2]);
                 wall.userData.physics = { mass: 0 };
                 scene.add( wall );
@@ -162,7 +161,6 @@
             });
 
             const controls = new OrbitControls( camera, renderer.domElement );
-            controls.addEventListener( 'change', animate );
             controls.target.set( 0, 2, 0 );
             controls.update();
         }
